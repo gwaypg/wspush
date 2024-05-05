@@ -26,7 +26,8 @@ cd cmd/wsnode
 
 ## origin
 ```
-PRJ_ROOT=<wspush root path> ./$PRJ_ROOT/cmd/wsnode/wsnode
+cd wspush
+PRJ_ROOT=`pwd` ./cmd/wsnode/wsnode
 ```
 
 ## supd
