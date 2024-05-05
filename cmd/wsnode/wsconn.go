@@ -21,7 +21,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/gwaylib/errors"
 	"github.com/gwaylib/qsql"
-	"github.com/labstack/echo"
+	echo "github.com/labstack/echo/v4"
 )
 
 var (
@@ -103,7 +103,7 @@ func (w *WsConn) handleCb(uid, token, tag string, req *wsnode.Proto) ([]byte, er
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: cb.Insecure,
 			},
-			QuicConfig: &quic.Config{
+			QUICConfig: &quic.Config{
 				Tracer: qlog.DefaultTracer,
 			},
 		}

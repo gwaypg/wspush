@@ -16,8 +16,8 @@ import (
 	"github.com/gwaylib/errors"
 	"github.com/gwaylib/eweb"
 	"github.com/gwaylib/qsql"
-	"github.com/labstack/echo"
-	"github.com/labstack/echo/middleware"
+	echo "github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 var (
