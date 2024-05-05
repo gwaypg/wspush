@@ -24,6 +24,11 @@ cd cmd/wsnode
 
 # Deployment
 
+## origin
+```
+PRJ_ROOT=<wspush root path> ./$PRJ_ROOT/cmd/wsnode/wsnode
+```
+
 ## supd
 ```
 git clone https://github.com/gwaypg/supd
