@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -90,7 +91,7 @@ func (w *WsConn) SetCallback(tag string, cb *wsnode.CallBack) error {
 	return nil
 }
 
-func (w *WsConn) handleCb(uid, token, tag string, req *wsnode.Proto) ([]byte, error) {
+func (w *WsConn) handleCb(cid, uid, token, tag string, req *wsnode.Proto) ([]byte, error) {
 	cbI, ok := w.callback.Load(tag)
 	if !ok {
 		return nil, ErrArgs.As("callback not set").As(tag)
@@ -118,8 +119,12 @@ func (w *WsConn) handleCb(uid, token, tag string, req *wsnode.Proto) ([]byte, er
 
 	}
 	// TODO: does open too many files?
+	auth := url.Values{}
+	auth.Add("cid", cid)
+	auth.Add("uid", uid)
+	auth.Add("token", token)
 	resp, err := httpClient.Post(
-		fmt.Sprintf("%s?uid=%s&token=%s", cb.URL, uid, token), // for auth
+		fmt.Sprintf("%s?%s", cb.URL, auth.Encode()), // for auth
 		"application/json",
 		bytes.NewReader(req.Serial()),
 	)
@@ -155,7 +160,7 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 	uConn := NewUserConn(cid, conn, 30*time.Second)
 	// 登录回调
 	if _, err := w.handleCb(
-		uid, token, tag,
+		cid, uid, token, tag,
 		wsnode.NewReqProto(uuid.New().String(), "/user/login"),
 	); err != nil {
 		if ErrAuth.Equal(err) {
@@ -206,7 +211,7 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 			req.Param.AddAny("code", code)
 			req.Param.AddAny("text", text)
 			if _, err := w.handleCb(
-				uid, token, tag, req,
+				cid, uid, token, tag, req,
 			); err != nil {
 				log.Warn(errors.As(err))
 			}
@@ -250,7 +255,7 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 			log.Warn(errors.As(err))
 			return uConn.Close(wsnode.CloseProtocolError, "协议格式错误,请检查协议格式")
 		}
-		resp, err := w.handleCb(uid, token, tag, req)
+		resp, err := w.handleCb(cid, uid, token, tag, req)
 		if err != nil {
 			if ErrAuth.Equal(err) {
 				return uConn.Close(wsnode.CloseErrAuth, "鉴权失败")
