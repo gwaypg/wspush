@@ -9,6 +9,12 @@ import (
 	"github.com/gwaylib/eweb/jsonp"
 )
 
+const (
+	CALLBACK_PROTO_HTTP  = "http"
+	CALLBACK_PROTO_QUIC  = "quic"
+	CALLBACK_PROTO_HTTPS = "https"
+)
+
 var (
 	ErrHashMatch = errors.New("hash not match")
 	ErrNoConn    = errors.New("connetion not found")

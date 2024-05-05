@@ -30,11 +30,6 @@ var (
 	ErrArgs   = errors.New("err arguments")
 )
 
-const (
-	CALLBACK_PROTO_QUIC  = "quic"
-	CALLBACK_PROTO_HTTPS = "https"
-)
-
 type WsConn struct {
 	userLk    sync.Mutex
 	userConns sync.Map // map[uid]*UserMulConn
@@ -79,7 +74,7 @@ func NewWsConn() *WsConn {
 
 func (w *WsConn) SetCallback(tag string, cb *wsnode.CallBack) error {
 	switch cb.Proto {
-	case CALLBACK_PROTO_QUIC, CALLBACK_PROTO_HTTPS:
+	case wsnode.CALLBACK_PROTO_QUIC, wsnode.CALLBACK_PROTO_HTTPS, wsnode.CALLBACK_PROTO_HTTP:
 	default:
 		return errors.New("unsupport proto").As(cb)
 	}
@@ -102,7 +97,8 @@ func (w *WsConn) handleCb(uid, token, tag string, req *wsnode.Proto) ([]byte, er
 	}
 	cb, _ := cbI.(*wsnode.CallBack)
 	httpClient := &http.Client{}
-	if cb.Proto == CALLBACK_PROTO_QUIC {
+	switch cb.Proto {
+	case wsnode.CALLBACK_PROTO_QUIC:
 		httpClient.Transport = &http3.RoundTripper{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: cb.Insecure,
@@ -111,12 +107,15 @@ func (w *WsConn) handleCb(uid, token, tag string, req *wsnode.Proto) ([]byte, er
 				Tracer: qlog.DefaultTracer,
 			},
 		}
-	} else {
+	case wsnode.CALLBACK_PROTO_HTTPS:
 		httpClient.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: cb.Insecure,
 			},
 		}
+	default:
+		// inore
+
 	}
 	// TODO: does open too many files?
 	resp, err := httpClient.Post(
