@@ -43,7 +43,6 @@ func (impl *serviceImpl) loadCallbackCache() error {
 		panic(fmt.Sprintf("unonly support %d>1000 callback node", cursor))
 	}
 	for _, key := range result {
-		fmt.Println(string(key))
 		cb := &wsnode.CallBack{}
 		if err := r.ScanJSON(string(key), cb); err != nil {
 			return errors.As(err)
