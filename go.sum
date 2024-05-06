@@ -93,6 +93,8 @@ github.com/gwaylib/redis v0.0.0-20231110105356-a4910e0c1eaf h1:1TW2pzpv22QPITCAN
 github.com/gwaylib/redis v0.0.0-20231110105356-a4910e0c1eaf/go.mod h1:cxir25v8NPKIh1ZSjahoUU0MFLa88RbTpO1F4C4/mQ0=
 github.com/gwaylib/rpctry v0.0.0-20240317101317-692c4c2d02df h1:MM86DCLSCkORLWEi2pvFdnyZ1Qft7TQp1FjCru6SD6Q=
 github.com/gwaylib/rpctry v0.0.0-20240317101317-692c4c2d02df/go.mod h1:WrMkMyOC8IakPU/hckLL34GPX2YHQeYCD1DK4gbLpYA=
+github.com/gwaylib/rpctry v0.0.0-20240506130424-4ee92b3060e3 h1:ipheWIYqywu9YB6T7fvh6XedVujUm0B/kyKflU4b0kw=
+github.com/gwaylib/rpctry v0.0.0-20240506130424-4ee92b3060e3/go.mod h1:WrMkMyOC8IakPU/hckLL34GPX2YHQeYCD1DK4gbLpYA=
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/iwanbk/gobeanstalk v0.0.0-20160903043409-dbbb23937c31/go.mod h1:9ERvzhQ09s9SfQ7LjjF6FwUDnfkdZJUCN3vOUE+NtP8=
 github.com/jellevandenhooff/dkim v0.0.0-20150330215556-f50fe3d243e1/go.mod h1:E0B/fFc00Y+Rasa88328GlI/XbtyysCtTHZS8h7IrBU=

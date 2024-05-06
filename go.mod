@@ -12,7 +12,7 @@ require (
 	github.com/gwaylib/log v0.0.2
 	github.com/gwaylib/qsql v0.0.2
 	github.com/gwaylib/redis v0.0.0-20231110105356-a4910e0c1eaf
-	github.com/gwaylib/rpctry v0.0.0-20240317101317-692c4c2d02df
+	github.com/gwaylib/rpctry v0.0.0-20240506130424-4ee92b3060e3
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/quic-go/quic-go v0.43.1
 )
