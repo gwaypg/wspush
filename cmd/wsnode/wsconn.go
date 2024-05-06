@@ -35,8 +35,8 @@ type WsConn struct {
 	userLk    sync.Mutex
 	userConns sync.Map // map[uid]*UserMulConn
 
-	roomsLk sync.Mutex
-	rooms   sync.Map // map[string]*Topic
+	roomLk sync.Mutex
+	rooms  sync.Map // map[string]*Topic
 
 	callbackLk sync.Mutex
 	callback   sync.Map // map[string]string
@@ -198,9 +198,7 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 	mulConn.Store(cid, uConn)
 
 	defer func() {
-		w.CloseWithConn(uid, conn, websocket.CloseNormalClosure, "请求已完成")
-		mulConn.Delete(cid)
-		// TODO: clean empty mulConn?
+		w.CloseWithConn(cid, uid, conn, websocket.CloseNormalClosure, "请求已完成")
 	}()
 
 	// 设置下线通知
@@ -271,22 +269,35 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 }
 
 // 主动关闭用户连接
-func (w *WsConn) Close(uid string, code int, msg string) error {
-	v, ok := w.userConns.Load(uid)
+func (w *WsConn) Close(cid, uid string, code int, msg string) error {
+	mulConn, ok := w.LoadUser(uid)
 	if !ok {
 		return ErrNoConn.As(uid)
 	}
-	uConn := v.(*UserConn)
-	if err := uConn.Close(code, msg); err != nil {
-		return errors.As(err)
+	uConn, ok := mulConn.Load(cid)
+	if !ok {
+		return ErrNoConn.As(uid)
 	}
-	w.userConns.Delete(uid)
+	if err := uConn.Close(code, msg); err != nil {
+		log.Warn(errors.As(err))
+	}
+	mulConn.Delete(cid)
+
+	// clean user connection
+	count := 0
+	mulConn.conns.Range(func(key, val interface{}) bool {
+		count++
+		return false
+	})
+	if count == 0 {
+		w.userConns.Delete(uid)
+	}
 	return nil
 }
 
 // 主动关闭用户连接，若找不到ID，再对conn进行关闭
-func (w *WsConn) CloseWithConn(uid string, conn *websocket.Conn, code int, msg string) {
-	if err := w.Close(uid, code, msg); err != nil {
+func (w *WsConn) CloseWithConn(cid, uid string, conn *websocket.Conn, code int, msg string) {
+	if err := w.Close(cid, uid, code, msg); err != nil {
 		if !ErrNoConn.Equal(err) {
 			log.Warn(errors.As(err))
 			return
@@ -298,13 +309,12 @@ func (w *WsConn) CloseWithConn(uid string, conn *websocket.Conn, code int, msg s
 }
 
 func (w *WsConn) IsTopicMember(uid, topic string) bool {
-	roomVal, ok := w.rooms.Load(topic)
+	room, ok := w.LoadRoom(topic)
 	if !ok {
 		return false
 	}
 
 	// for owner
-	room := roomVal.(Topic)
 	if room.Owner == uid {
 		return true
 	}
@@ -356,12 +366,10 @@ func (w *WsConn) Push(uid string, p *wsnode.Proto) error {
 // 实时广播消息(这是不可靠的，如果必要，需要客户端发送确认收到协议)
 // TODO: make history?
 func (w *WsConn) SendTopic(topic string, p *wsnode.Proto) error {
-	var room Topic
-	roomV, ok := w.rooms.Load(topic)
+	var room *Topic
+	room, ok := w.LoadRoom(topic)
 	if !ok {
 		return errors.ErrNoData.As(topic)
-	} else {
-		room = roomV.(Topic)
 	}
 
 	wsData, err := json.Marshal(p)
@@ -369,21 +377,20 @@ func (w *WsConn) SendTopic(topic string, p *wsnode.Proto) error {
 		return errors.As(err)
 	}
 
-	room.Member.Range(func(key, val interface{}) bool {
-		conns, ok := w.userConns.Load(key.(string))
+	room.Member.Range(func(uid, val interface{}) bool {
+		mulConn, ok := w.LoadUser(uid.(string))
 		if !ok {
-			// TODO: 清理订阅者
-			w.userConns.Delete(key.(string))
 			return true
 		}
 
-		for _, conn := range conns.([]*UserConn) {
-			if err := conn.Broadcast(wsData); err != nil {
+		mulConn.conns.Range(func(cid, val interface{}) bool {
+			uConn := val.(*UserConn)
+			if err := uConn.Broadcast(wsData); err != nil {
 				// unexpect here
 				log.Warn(errors.As(err))
-				return false
 			}
-		}
+			return false
+		})
 		return true
 	})
 	return nil
@@ -443,7 +450,7 @@ func (w *WsConn) JoinTopic(uid string, topics ...string) error {
 		if !ok {
 			return errors.ErrNoData.As(topic)
 		}
-		topicRoom := val.(Topic)
+		topicRoom := val.(*Topic)
 		topicRoom.Member.Store(uid, true)
 		w.rooms.Store(topic, topicRoom)
 	}
@@ -457,7 +464,7 @@ func (w *WsConn) LeaveTopic(uid string, topics ...string) error {
 		if !ok {
 			return nil
 		}
-		topicRoom := val.(Topic)
+		topicRoom := val.(*Topic)
 		topicRoom.Member.Delete(uid)
 		w.rooms.Store(topic, topicRoom)
 	}

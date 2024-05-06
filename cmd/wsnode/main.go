@@ -93,12 +93,22 @@ func main() {
 		rpc.Accept(conn)
 	}()
 
-	// for websocket
+	// for wss
 	go func() {
 		httpsAddr := etc.Etc.String("cmd/wsnode", "https_listen")
 
 		log.Infof("Https listen : %s", httpsAddr)
 		if err := e.StartTLSConfig(httpsAddr, cert.GetTLSConfig()); err != nil {
+			log.Exit(2, errors.As(err))
+			return
+		}
+	}()
+
+	// for ws
+	go func() {
+		httpAddr := etc.Etc.String("cmd/wsnode", "http_listen")
+		log.Infof("Http listen : %s", httpAddr)
+		if err := e.Start(httpAddr); err != nil {
 			log.Exit(2, errors.As(err))
 			return
 		}
