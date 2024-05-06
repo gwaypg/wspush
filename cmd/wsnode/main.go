@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/gwaylib/cert"
 	"github.com/gwaypg/wspush/module/etc"
@@ -71,7 +72,19 @@ func main() {
 	keyFile := etc.Etc.String("cmd/wsnode", "https_tls_key")
 	certFile := etc.Etc.String("cmd/wsnode", "https_tls_cert")
 	if len(keyFile) > 0 {
-		cert.AddFileCert(os.ExpandEnv(keyFile), os.ExpandEnv(certFile))
+		if err := cert.AddFileCert(os.ExpandEnv(keyFile), os.ExpandEnv(certFile)); err != nil {
+			panic(err)
+		}
+		// auto reload file cert every day
+		go func() {
+			ticker := time.NewTicker(24 * time.Hour)
+			for {
+				<-ticker.C
+				if err := cert.AddFileCert(os.ExpandEnv(keyFile), os.ExpandEnv(certFile)); err != nil {
+					log.Warn(errors.As(err))
+				}
+			}
+		}()
 	} else {
 		log.Info("cert file not not, using auto cert")
 		cert.AddAutoCert("lib10", "wsnode")
@@ -93,7 +106,7 @@ func main() {
 		rpc.Accept(conn)
 	}()
 
-	// for wss
+	// for wss release
 	go func() {
 		httpsAddr := etc.Etc.String("cmd/wsnode", "https_listen")
 
@@ -104,7 +117,7 @@ func main() {
 		}
 	}()
 
-	// for ws
+	// ws for debug
 	go func() {
 		httpAddr := etc.Etc.String("cmd/wsnode", "http_listen")
 		log.Infof("Http listen : %s", httpAddr)
