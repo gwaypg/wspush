@@ -14,11 +14,15 @@ const (
 
 func init() {
 	host := etc.Etc.String("module/cache/redis", "uri")
+	dbIndex := etc.Etc.String("module/cache/redis", "dbi")
 	password := etc.Etc.String("module/cache/redis", "passwd")
 	poolSize := etc.Etc.Int64("module/cache/redis", "pool_size")
-	r, err := redis.NewRediStore(int(poolSize), "tcp", host, password)
+	if len(dbIndex) == 0 {
+		dbIndex = "0"
+	}
+	r, err := redis.NewRediStoreWithDB(int(poolSize), "tcp", host, password, dbIndex)
 	if err != nil {
-		panic(errors.As(err, host, password, poolSize))
+		panic(errors.As(err, host, password, poolSize, dbIndex))
 	}
 	gRedis = r
 }
