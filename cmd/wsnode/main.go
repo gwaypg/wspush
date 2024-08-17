@@ -27,7 +27,6 @@ var (
 	// Configure the upgrader
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
-			//不检查跨域
 			return true
 		},
 	}

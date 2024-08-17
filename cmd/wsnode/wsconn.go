@@ -38,8 +38,8 @@ type WsConn struct {
 	roomLk sync.Mutex
 	rooms  sync.Map // map[string]*Topic
 
-	callbackLk sync.Mutex
-	callback   sync.Map // map[string]string
+	svcLk sync.Mutex
+	svc   sync.Map // map[string]string
 }
 
 func (ws *WsConn) LoadUser(uid string) (*UserMulConn, bool) {
@@ -57,8 +57,8 @@ func (ws *WsConn) LoadRoom(roomId string) (*Topic, bool) {
 	}
 	return room.(*Topic), true
 }
-func (ws *WsConn) LoadCallback(tag string) (string, bool) {
-	callback, ok := ws.callback.Load(tag)
+func (ws *WsConn) LoadSvc(tag string) (string, bool) {
+	callback, ok := ws.svc.Load(tag)
 	if !ok {
 		return "", false
 	}
@@ -69,7 +69,7 @@ func NewWsConn() *WsConn {
 	return &WsConn{
 		userConns: sync.Map{},
 		rooms:     sync.Map{},
-		callback:  sync.Map{},
+		svc:       sync.Map{},
 	}
 }
 
@@ -87,12 +87,12 @@ func (w *WsConn) SetCallback(tag string, cb *wsnode.CallBack) error {
 		return errors.New("URL not set")
 	}
 
-	w.callback.Store(tag, cb)
+	w.svc.Store(tag, cb)
 	return nil
 }
 
-func (w *WsConn) handleCb(cid, uid, token, tag string, req *wsnode.Proto) ([]byte, error) {
-	cbI, ok := w.callback.Load(tag)
+func (w *WsConn) handleSvc(cid, uid, token, tag string, req *wsnode.Proto) ([]byte, error) {
+	cbI, ok := w.svc.Load(tag)
 	if !ok {
 		return nil, ErrArgs.As("callback not set").As(tag)
 	}
@@ -158,8 +158,8 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 	tag := c.FormValue("tag")
 
 	uConn := NewUserConn(cid, conn, 30*time.Second)
-	// 登录回调
-	if _, err := w.handleCb(
+	// 连接时登录回调
+	if _, err := w.handleSvc(
 		cid, uid, token, tag,
 		wsnode.NewReqProto(uuid.New().String(), "/user/login"),
 	); err != nil {
@@ -176,39 +176,40 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 
 	// 检查是否已存在，若已存在，关闭之前的连接
 	w.userLk.Lock()
-	mulConn, ok := w.LoadUser(uid)
+	userConns, ok := w.LoadUser(uid)
 	if !ok {
-		mulConn = &UserMulConn{}
-		w.userConns.Store(uid, mulConn)
+		userConns = &UserMulConn{}
+		w.userConns.Store(uid, userConns)
 	}
 	w.userLk.Unlock()
 
-	mulConn.conns.Range(func(key, val interface{}) bool {
+	userConns.conns.Range(func(key, val interface{}) bool {
 		conn := val.(*UserConn)
 		if cid == conn.cid {
 			// 关闭之前的连接
 			log.Debugf("close history :%s, %s", uid, cid)
-			if err := conn.Close(wsnode.CloseErrAuth, "新的登录取代了现有登录"); err != nil {
+			if err := conn.Close(wsnode.CloseErrAuth, "User reconnect"); err != nil {
 				log.Warn(errors.As(err))
 			}
-			mulConn.Delete(key)
+			userConns.Delete(key)
 		}
 		return true
 	})
-	mulConn.Store(cid, uConn)
+	userConns.Store(cid, uConn)
 
 	defer func() {
 		w.CloseWithConn(cid, uid, conn, websocket.CloseNormalClosure, "请求已完成")
 	}()
 
-	// 设置下线通知
+	// 设置ws下线通知，
+	// 以便网络中断时通知调用者用户下线事件
 	func(u *UserConn) {
 		u.conn.SetCloseHandler(func(code int, text string) error {
 			req := wsnode.NewReqProto(uuid.New().String(), "/user/logout")
 			req.Param.AddAny("cid", u.cid)
 			req.Param.AddAny("code", code)
 			req.Param.AddAny("text", text)
-			if _, err := w.handleCb(
+			if _, err := w.handleSvc(
 				cid, uid, token, tag, req,
 			); err != nil {
 				log.Warn(errors.As(err))
@@ -216,9 +217,9 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 
 			return u.Close(code, text)
 		})
-	}(uConn) // 复制一份副本
+	}(uConn)
 
-	// 设置PING回应
+	// 设置ws PING回应
 	func(u *UserConn) {
 		u.conn.SetPingHandler(func(message string) error {
 			log.Debugf("ping handle:%s\n", message)
@@ -233,6 +234,7 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 		})
 	}(uConn)
 
+	// 处理长连接
 	log.Debugf("logon:%s", uid)
 	for {
 		msgData, err := uConn.ReadMessage()
@@ -253,7 +255,8 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 			log.Warn(errors.As(err))
 			return uConn.Close(wsnode.CloseProtocolError, "协议格式错误,请检查协议格式")
 		}
-		resp, err := w.handleCb(cid, uid, token, tag, req)
+		// 通知调用者处理
+		resp, err := w.handleSvc(cid, uid, token, tag, req)
 		if err != nil {
 			if ErrAuth.Equal(err) {
 				return uConn.Close(wsnode.CloseErrAuth, "鉴权失败")
@@ -261,6 +264,8 @@ func (w *WsConn) HandleConn(c echo.Context, conn *websocket.Conn) error {
 			log.Warn(errors.As(err))
 			return uConn.Close(wsnode.CloseErrConn, "网络响应失败")
 		}
+
+		// 写回调用者处理结果
 		if err := uConn.Send(resp); err != nil {
 			log.Warn(errors.As(err))
 			return uConn.Close(wsnode.CloseErrConn, "网络响应失败")
@@ -308,29 +313,13 @@ func (w *WsConn) CloseWithConn(cid, uid string, conn *websocket.Conn, code int, 
 	}
 }
 
-func (w *WsConn) IsTopicMember(uid, topic string) bool {
-	room, ok := w.LoadRoom(topic)
-	if !ok {
-		return false
-	}
-
-	// for owner
-	if room.Owner == uid {
-		return true
-	}
-
-	// for memeber
-	_, ok = room.Member.Load(uid)
-	return ok
-}
-
-// 用户是否在线
+// RPC检测用户是否在线
 func (w *WsConn) IsOnline(uid, clientId string) bool {
 	_, ok := w.userConns.Load(uid)
 	return ok
 }
 
-// 实时推送, 若不可达，直接返回错误
+// RPC实时推送, 若不可达，直接返回错误
 func (w *WsConn) Push(uid string, p *wsnode.Proto) error {
 	v, ok := w.userConns.Load(uid)
 	if !ok {
@@ -351,11 +340,9 @@ func (w *WsConn) Push(uid string, p *wsnode.Proto) error {
 	}
 	var resultErr error
 	for i := 0; i < len(conns); i++ {
+		resultErr = nil
 		err := <-result
-		if err == nil {
-			// 确保至少有一个可达
-			resultErr = nil
-		} else {
+		if err != nil {
 			resultErr = err
 			log.Info(errors.As(err))
 		}
@@ -363,8 +350,7 @@ func (w *WsConn) Push(uid string, p *wsnode.Proto) error {
 	return errors.As(resultErr)
 }
 
-// 实时广播消息(这是不可靠的，如果必要，需要客户端发送确认收到协议)
-// TODO: make history?
+// RPC实时广播消息(这是不可靠的，如果必要，需要客户端发送确认收到协议)
 func (w *WsConn) SendTopic(topic string, p *wsnode.Proto) error {
 	var room *Topic
 	room, ok := w.LoadRoom(topic)
@@ -396,11 +382,7 @@ func (w *WsConn) SendTopic(topic string, p *wsnode.Proto) error {
 	return nil
 }
 
-// 创建某个频道
-// 当前已知的主题:
-// 系统主题：/all/system
-// 场景主题：/all/scene/:id
-// 世界主题：暂不开放，待进一步定义
+// RPC创建某个主题
 func (w *WsConn) CreateTopic(uid string, topics ...string) error {
 	for _, topic := range topics {
 		room, ok := w.LoadRoom(topic)
@@ -421,6 +403,7 @@ func (w *WsConn) CreateTopic(uid string, topics ...string) error {
 	return nil
 }
 
+// 注销某个主题
 func (w *WsConn) DestoryTopic(uid string, topics ...string) error {
 	for _, topic := range topics {
 		room, ok := w.LoadRoom(topic)
@@ -435,15 +418,7 @@ func (w *WsConn) DestoryTopic(uid string, topics ...string) error {
 	return nil
 }
 
-func (w *WsConn) GetTopicOwner(topic string) (string, error) {
-	room, ok := w.LoadRoom(topic)
-	if !ok {
-		return "", errors.ErrNoData.As(topic)
-	}
-	return room.Owner, nil
-}
-
-// 订阅某个已创建的频道
+// 加入某个已创建的主题
 func (w *WsConn) JoinTopic(uid string, topics ...string) error {
 	for _, topic := range topics {
 		val, ok := w.rooms.Load(topic)
@@ -457,7 +432,7 @@ func (w *WsConn) JoinTopic(uid string, topics ...string) error {
 	return nil
 }
 
-// 取消某个频道的订阅
+// 离开某个主题
 func (w *WsConn) LeaveTopic(uid string, topics ...string) error {
 	for _, topic := range topics {
 		val, ok := w.rooms.Load(topic)
@@ -469,4 +444,30 @@ func (w *WsConn) LeaveTopic(uid string, topics ...string) error {
 		w.rooms.Store(topic, topicRoom)
 	}
 	return nil
+}
+
+// 检测是否是某主题成员
+func (w *WsConn) IsTopicMember(uid, topic string) bool {
+	room, ok := w.LoadRoom(topic)
+	if !ok {
+		return false
+	}
+
+	// for owner
+	if room.Owner == uid {
+		return true
+	}
+
+	// for memeber
+	_, ok = room.Member.Load(uid)
+	return ok
+}
+
+// 获取指定主题的创建者
+func (w *WsConn) GetTopicOwner(topic string) (string, error) {
+	room, ok := w.LoadRoom(topic)
+	if !ok {
+		return "", errors.ErrNoData.As(topic)
+	}
+	return room.Owner, nil
 }
